@@ -37,18 +37,21 @@ ${REAL_PLAN_PRICING}
 - Formato del cuerpo: HTML semántico simple -- solo <p>, <h2>, <h3>, <ul>, <li>, <strong>, <a>.
   NUNCA incluyas <html>, <head>, <body>, ni estilos inline.
 
-Cuando termines de investigar, responde en TU ÚLTIMO mensaje ÚNICAMENTE con el resultado envuelto
-así, sin texto antes ni después del bloque:
+Cuando termines de investigar, responde en TU ÚLTIMO mensaje ÚNICAMENTE con el resultado en este
+formato EXACTO (no uses JSON -- cada campo en su propia línea con su etiqueta, y BODY_HTML puede
+tener tantas líneas como haga falta hasta la etiqueta final):
 
-<ARTICLE_JSON>
-{
-  "title": "Título del artículo (máximo 65 caracteres, atractivo y con la palabra clave)",
-  "slug": "titulo-en-minusculas-separado-por-guiones-sin-tildes",
-  "metaDescription": "Descripción para buscadores, máximo 155 caracteres",
-  "excerpt": "Resumen de 1-2 frases para la tarjeta del blog, máximo 200 caracteres",
-  "bodyHtml": "<p>...el articulo completo en HTML...</p>"
-}
-</ARTICLE_JSON>
+===TITLE===
+Título del artículo (máximo 65 caracteres, atractivo y con la palabra clave)
+===SLUG===
+titulo-en-minusculas-separado-por-guiones-sin-tildes
+===META_DESCRIPTION===
+Descripción para buscadores, máximo 155 caracteres
+===EXCERPT===
+Resumen de 1-2 frases para la tarjeta del blog, máximo 200 caracteres
+===BODY_HTML===
+<p>...el artículo completo en HTML, con tantas líneas como haga falta...</p>
+===END===
 `.trim();
 
 export async function generateArticle({ topic, keyword }) {
@@ -106,21 +109,7 @@ export async function generateArticle({ topic, keyword }) {
     .map((block) => block.text)
     .join("\n");
 
-  const match = fullText.match(/<ARTICLE_JSON>([\s\S]*?)<\/ARTICLE_JSON>/);
-  if (!match) {
-    throw new Error("No se pudo extraer el JSON del articulo generado por Claude");
-  }
-
-  let article;
-  try {
-    article = JSON.parse(match[1].trim());
-  } catch (err) {
-    throw new Error(`JSON del articulo invalido: ${err.message}`);
-  }
-
-  for (const field of ["title", "slug", "metaDescription", "excerpt", "bodyHtml"]) {
-    if (!article[field]) throw new Error(`Al articulo generado le falta el campo "${field}"`);
-  }
+  const article = parseDelimitedArticle(fullText);
 
   // Normaliza el slug por seguridad, aunque se le pidio a Claude que ya
   // viniera limpio.
@@ -133,6 +122,34 @@ export async function generateArticle({ topic, keyword }) {
   article.sources = sources.slice(0, 6);
   article.keyword = keyword;
   article.topic = topic;
+
+  return article;
+}
+
+// Extrae los campos del formato delimitado (===CAMPO===) en vez de JSON --
+// mas robusto ante HTML multilinea, que suele romper el escapado de JSON
+// que devuelven los modelos de lenguaje.
+function parseDelimitedArticle(fullText) {
+  const fieldNames = ["TITLE", "SLUG", "META_DESCRIPTION", "EXCERPT", "BODY_HTML"];
+  const fieldMap = { TITLE: "title", SLUG: "slug", META_DESCRIPTION: "metaDescription", EXCERPT: "excerpt", BODY_HTML: "bodyHtml" };
+
+  const pattern = new RegExp(
+    `===(${fieldNames.join("|")})===\\s*\\n([\\s\\S]*?)(?=\\n===(?:${fieldNames.join("|")}|END)===|$)`,
+    "g"
+  );
+
+  const article = {};
+  let match;
+  while ((match = pattern.exec(fullText)) !== null) {
+    const key = fieldMap[match[1]];
+    article[key] = match[2].trim();
+  }
+
+  for (const field of Object.values(fieldMap)) {
+    if (!article[field]) {
+      throw new Error(`Al articulo generado le falta el campo "${field}". Texto recibido: ${fullText.slice(0, 400)}`);
+    }
+  }
 
   return article;
 }
