@@ -23,7 +23,8 @@ import {
 import { formatCOP } from "./utils/format.js";
 import { debugCheckWhatsAppConfig } from "./services/whatsapp.js";
 import { startBlogScheduler, generateAndNotify } from "./blogScheduler.js";
-import { publishDraft, discardDraft, regenerateIndex } from "./services/blogPublisher.js";
+import { publishDraft, discardDraft, regenerateIndex, regenerateAll } from "./services/blogPublisher.js";
+import { getFile, putFile } from "./services/github.js";
 import { verifyApprovalToken } from "./services/blogApproval.js";
 
 const CHAT_RATE_LIMIT_PER_MINUTE = 20;
@@ -61,6 +62,59 @@ app.get("/debug/regenerate-blog-index", async (req, res) => {
     }
     const count = await regenerateIndex();
     res.json({ success: true, posts: count });
+  } catch (err) {
+    res.status(200).json({ success: false, error: err.message });
+  }
+});
+
+// TEMPORAL -- regenera todos los posts publicados + el indice desde sus
+// datos guardados (blog/posts/{slug}.json), para aplicar cambios de
+// plantilla (footer, estilos, etc.) sin volver a generar contenido.
+app.get("/debug/regenerate-all-posts", async (req, res) => {
+  try {
+    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
+      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
+    }
+    const count = await regenerateAll();
+    res.json({ success: true, posts: count });
+  } catch (err) {
+    res.status(200).json({ success: false, error: err.message });
+  }
+});
+
+// TEMPORAL -- parche puntual: reemplaza el bloque de enlaces del footer en
+// un archivo HTML ya publicado, sin reconstruir el resto de la pagina.
+// Solo hace falta para el primer post, publicado antes de guardar
+// blog/posts/{slug}.json. Quitar despues de usarlo.
+app.get("/debug/patch-footer", async (req, res) => {
+  try {
+    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
+      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
+    }
+    const path = req.query.path;
+    if (!path) return res.status(400).json({ error: "Falta el parametro path" });
+
+    const file = await getFile(path);
+    if (!file) return res.status(404).json({ error: `No existe ${path}` });
+
+    const oldFooterLinks = /<div class="footer-links">[\s\S]*?<\/div>/;
+    const newFooterLinks = `<div class="footer-links">
+        <a href="https://esteban-serna.com/">Inicio</a>
+        <a href="https://esteban-serna.com/#servicios">¿Qué hace la IA?</a>
+        <a href="https://esteban-serna.com/#sobre-mi">Sobre Esteban</a>
+        <a href="https://esteban-serna.com/#planes">Servicios</a>
+        <a href="https://esteban-serna.com/blog/">Blog</a>
+        <a href="https://esteban-serna.com/#faq">Preguntas Frecuentes</a>
+        <a href="https://esteban-serna.com/#reservar">Reservar</a>
+      </div>`;
+
+    if (!oldFooterLinks.test(file.content)) {
+      return res.json({ success: false, error: "No se encontro el bloque footer-links en ese archivo" });
+    }
+
+    const updated = file.content.replace(oldFooterLinks, newFooterLinks);
+    await putFile(path, updated, `Blog: parchar footer en ${path}`);
+    res.json({ success: true, path });
   } catch (err) {
     res.status(200).json({ success: false, error: err.message });
   }

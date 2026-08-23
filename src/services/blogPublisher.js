@@ -61,6 +61,15 @@ export async function publishDraft(slug) {
   const html = renderPostPage(article, { publishedAt, isDraft: false, hasCoverImage: !!draftCover });
   await putFile(`blog/posts/${slug}.html`, html, `Blog: publicar "${article.title}"`);
 
+  // Se guarda el articulo completo (no solo el HTML final) para poder
+  // regenerar la pagina despues si cambia la plantilla (footer, diseno,
+  // etc.) sin tener que volver a generar el contenido con Claude.
+  await putFile(
+    `blog/posts/${slug}.json`,
+    JSON.stringify({ ...article, publishedAt: publishedAt.toISOString(), hasCoverImage: !!draftCover }, null, 2),
+    `Blog: guardar datos de "${article.title}"`
+  );
+
   const manifest = await getPostsManifest();
   const entry = {
     slug: article.slug,
@@ -105,6 +114,36 @@ export async function regenerateIndex() {
   const manifest = await getPostsManifest();
   const indexHtml = renderIndexPage(manifest);
   await putFile("blog/index.html", indexHtml, "Blog: regenerar índice (cambio de diseño)");
+  return manifest.length;
+}
+
+// Re-renderiza un articulo ya publicado desde su blog/posts/{slug}.json
+// (sin volver a generar el contenido) -- para aplicar cambios de plantilla
+// (footer, estilos, etc.) a posts viejos.
+export async function regeneratePost(slug) {
+  const file = await getFile(`blog/posts/${slug}.json`);
+  if (!file) throw new Error(`No hay datos guardados para el post "${slug}" (se publico antes de que esto existiera)`);
+  const article = JSON.parse(file.content);
+  const html = renderPostPage(article, {
+    publishedAt: new Date(article.publishedAt),
+    isDraft: false,
+    hasCoverImage: !!article.hasCoverImage
+  });
+  await putFile(`blog/posts/${slug}.html`, html, `Blog: regenerar "${article.title}" (cambio de diseño)`);
+  return article.title;
+}
+
+// Regenera TODOS los posts publicados + el indice, en una sola llamada.
+export async function regenerateAll() {
+  const manifest = await getPostsManifest();
+  for (const post of manifest) {
+    try {
+      await regeneratePost(post.slug);
+    } catch (err) {
+      console.error(`No se pudo regenerar "${post.slug}":`, err.message);
+    }
+  }
+  await regenerateIndex();
   return manifest.length;
 }
 

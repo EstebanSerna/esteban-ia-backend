@@ -38,6 +38,7 @@ const FOOTER_HTML = `
         <a href="${SITE_URL}/#sobre-mi">Sobre Esteban</a>
         <a href="${SITE_URL}/#planes">Servicios</a>
         <a href="${SITE_URL}/blog/">Blog</a>
+        <a href="${SITE_URL}/#faq">Preguntas Frecuentes</a>
         <a href="${SITE_URL}/#reservar">Reservar</a>
       </div>
       <div class="footer-copyright">&copy; 2026 Esteban Serna. Todos los derechos reservados.<br>Implementación de IA &amp; Automatizaciones Empresariales.</div>
