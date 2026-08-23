@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Prueba aislada: suscripcion Railway (no cobra nada)</title>
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+  label { display: block; margin-top: 12px; font-size: 13px; font-weight: bold; }
+  input, .field { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; height: 38px; }
+  button { margin-top: 20px; width: 100%; padding: 12px; background: #d4af37; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+  pre { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 12px; }
+  h3 { color: #a00; }
+</style>
+</head>
+<body>
+  <h1>Prueba aislada de suscripción</h1>
+  <p>Esta página NO cobra nada — solo genera un token de tarjeta (gratis) y prueba la creación de
+  la suscripción contra el backend nuevo de Railway. No toca el sitio en vivo.</p>
+
+  <label>Nombre igual que en la tarjeta</label>
+  <input id="name" value="Test Esteban">
+  <label>Tipo de documento</label>
+  <input id="docType" value="CC">
+  <label>Número de documento</label>
+  <input id="docNumber" value="1000000000">
+  <label>Correo</label>
+  <input id="email" value="prueba@esteban-serna.com">
+  <label>Número de tarjeta</label>
+  <div id="cardNumber" class="field"></div>
+  <label>Vencimiento (MM/AA)</label>
+  <div id="expiration" class="field"></div>
+  <label>CVV</label>
+  <div id="cvv" class="field"></div>
+
+  <button id="btnTest">Probar suscripción (no cobra)</button>
+  <pre id="output">Esperando...</pre>
+
+<script>
+  const RAILWAY_URL = "https://esteban-ia-backend-production.up.railway.app/";
+  const MP_PUBLIC_KEY = "APP_USR-571a6f8c-dc56-47c6-92e3-858492e3b614";
+
+  const mp = new MercadoPago(MP_PUBLIC_KEY, { locale: "es-CO" });
+  mp.fields.create("cardNumber", { placeholder: "•••• •••• •••• ••••" }).mount("cardNumber");
+  mp.fields.create("expirationDate", { placeholder: "MM/AA" }).mount("expiration");
+  mp.fields.create("securityCode", { placeholder: "CVV" }).mount("cvv");
+
+  document.getElementById("btnTest").addEventListener("click", async () => {
+    const output = document.getElementById("output");
+    output.textContent = "Generando token (gratis, no cobra)...";
+    try {
+      const tokenRes = await mp.fields.createCardToken({
+        cardholderName: document.getElementById("name").value,
+        identificationType: document.getElementById("docType").value,
+        identificationNumber: document.getElementById("docNumber").value
+      });
+
+      output.textContent = "Token generado: " + tokenRes.id + "\nProbando suscripción en Railway...";
+
+      const res = await fetch(RAILWAY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mp_test_subscription",
+          subscriptionToken: tokenRes.id,
+          payerEmail: document.getElementById("email").value,
+          docType: document.getElementById("docType").value,
+          docNumber: document.getElementById("docNumber").value,
+          cardholderName: document.getElementById("name").value,
+          monthlyAmount: 10000
+        })
+      });
+      const data = await res.json();
+      output.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      output.textContent = "ERROR: " + (err.message || JSON.stringify(err));
+    }
+  });
+</script>
+</body>
+</html>

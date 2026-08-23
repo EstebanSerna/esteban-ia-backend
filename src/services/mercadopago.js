@@ -108,7 +108,12 @@ export async function createSubscription({ payerEmail, subscriptionToken, planTi
   const body = {
     payer_email: payerEmail,
     card_token_id: subscriptionToken,
-    reason: `${planTitle || "Esteban IA"} - Sostenimiento Mensual`,
+    // Mercado Pago exige "reason" <= 60 caracteres -- con planes largos
+    // (p.ej. "Asistente para Redes Sociales & WhatsApp") mas el sufijo
+    // anterior (" - Sostenimiento Mensual", 24 caracteres) se pasaba del
+    // limite y /preapproval rechazaba la suscripcion con "reason has more
+    // than 60 characters". Sufijo mas corto + recorte de seguridad.
+    reason: buildSubscriptionReason(planTitle),
     external_reference: `sub_${(serviceKey || "plan").replace(/\s+/g, "_")}_${Date.now()}`,
     back_url: "https://esteban-serna.com/",
     notification_url: getWebhookUrl(),
@@ -154,4 +159,15 @@ export function translatePaymentStatusDetail(statusDetail) {
 
 function cryptoRandomId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Arma el "reason" de la suscripcion sin pasarse del limite de 60
+// caracteres de Mercado Pago (recorta el titulo del plan si hace falta).
+function buildSubscriptionReason(planTitle) {
+  const MAX_LENGTH = 60;
+  const SUFFIX = " - Mensual";
+  const base = (planTitle || "Esteban IA").trim();
+  const maxBaseLength = MAX_LENGTH - SUFFIX.length;
+  const trimmedBase = base.length > maxBaseLength ? base.slice(0, maxBaseLength).trim() : base;
+  return `${trimmedBase}${SUFFIX}`;
 }
