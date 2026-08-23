@@ -21,10 +21,8 @@ import {
   notifyPendingResolvedAsRejected
 } from "./services/notifications.js";
 import { formatCOP } from "./utils/format.js";
-import { debugCheckWhatsAppConfig } from "./services/whatsapp.js";
-import { startBlogScheduler, generateAndNotify } from "./blogScheduler.js";
-import { publishDraft, discardDraft, regenerateIndex, regenerateAll } from "./services/blogPublisher.js";
-import { getFile, putFile } from "./services/github.js";
+import { startBlogScheduler } from "./blogScheduler.js";
+import { publishDraft, discardDraft } from "./services/blogPublisher.js";
 import { verifyApprovalToken } from "./services/blogApproval.js";
 
 const CHAT_RATE_LIMIT_PER_MINUTE = 20;
@@ -41,101 +39,6 @@ app.use(express.json({ limit: "1mb", type: () => true }));
 
 // Healthcheck para Railway.
 app.get("/", (_req, res) => res.status(200).json({ ok: true, service: "esteban-ia-backend" }));
-
-// TEMPORAL -- solo consulta (no envia nada) los datos del numero de
-// WhatsApp configurado, para diagnosticar el WHATSAPP_PHONE_NUMBER_ID.
-// Quitar una vez resuelto.
-app.get("/debug/whatsapp", async (_req, res) => {
-  try {
-    res.json(await debugCheckWhatsAppConfig());
-  } catch (err) {
-    res.status(200).json({ error: err.message });
-  }
-});
-
-// TEMPORAL -- reconstruye blog/index.html desde el manifiesto actual, para
-// aplicar cambios de diseno de la plantilla a posts que ya se publicaron.
-app.get("/debug/regenerate-blog-index", async (req, res) => {
-  try {
-    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
-      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
-    }
-    const count = await regenerateIndex();
-    res.json({ success: true, posts: count });
-  } catch (err) {
-    res.status(200).json({ success: false, error: err.message });
-  }
-});
-
-// TEMPORAL -- regenera todos los posts publicados + el indice desde sus
-// datos guardados (blog/posts/{slug}.json), para aplicar cambios de
-// plantilla (footer, estilos, etc.) sin volver a generar contenido.
-app.get("/debug/regenerate-all-posts", async (req, res) => {
-  try {
-    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
-      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
-    }
-    const count = await regenerateAll();
-    res.json({ success: true, posts: count });
-  } catch (err) {
-    res.status(200).json({ success: false, error: err.message });
-  }
-});
-
-// TEMPORAL -- parche puntual: reemplaza el bloque de enlaces del footer en
-// un archivo HTML ya publicado, sin reconstruir el resto de la pagina.
-// Solo hace falta para el primer post, publicado antes de guardar
-// blog/posts/{slug}.json. Quitar despues de usarlo.
-app.get("/debug/patch-footer", async (req, res) => {
-  try {
-    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
-      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
-    }
-    const path = req.query.path;
-    if (!path) return res.status(400).json({ error: "Falta el parametro path" });
-
-    const file = await getFile(path);
-    if (!file) return res.status(404).json({ error: `No existe ${path}` });
-
-    const oldFooterLinks = /<div class="footer-links">[\s\S]*?<\/div>/;
-    const newFooterLinks = `<div class="footer-links">
-        <a href="https://esteban-serna.com/">Inicio</a>
-        <a href="https://esteban-serna.com/#servicios">¿Qué hace la IA?</a>
-        <a href="https://esteban-serna.com/#sobre-mi">Sobre Esteban</a>
-        <a href="https://esteban-serna.com/#planes">Servicios</a>
-        <a href="https://esteban-serna.com/blog/">Blog</a>
-        <a href="https://esteban-serna.com/#faq">Preguntas Frecuentes</a>
-        <a href="https://esteban-serna.com/#reservar">Reservar</a>
-      </div>`;
-
-    if (!oldFooterLinks.test(file.content)) {
-      return res.json({ success: false, error: "No se encontro el bloque footer-links en ese archivo" });
-    }
-
-    const updated = file.content.replace(oldFooterLinks, newFooterLinks);
-    await putFile(path, updated, `Blog: parchar footer en ${path}`);
-    res.json({ success: true, path });
-  } catch (err) {
-    res.status(200).json({ success: false, error: err.message });
-  }
-});
-
-// TEMPORAL -- dispara la generacion de un articulo de blog de inmediato,
-// sin esperar al cron de cada 3 dias (para probar el pipeline completo una
-// vez). Pide el mismo secreto de aprobacion como llave simple para que no
-// cualquiera pueda disparar llamadas costosas a Claude + busqueda web.
-app.get("/debug/generate-blog-draft", async (req, res) => {
-  try {
-    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
-      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
-    }
-    const article = await generateAndNotify();
-    res.json({ success: true, slug: article.slug, title: article.title });
-  } catch (err) {
-    console.error("Error generando articulo de blog manual:", err);
-    res.status(200).json({ success: false, error: err.message });
-  }
-});
 
 function approvalResultPage(title, message, color) {
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${title}</title>
