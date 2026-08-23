@@ -24,13 +24,26 @@ async function githubRequest(path, options = {}) {
   return response;
 }
 
-// Devuelve { content, sha } del archivo, o null si no existe.
+// Devuelve { content, sha } del archivo (texto, UTF-8), o null si no existe.
 export async function getFile(path) {
+  const file = await getRawFile(path);
+  if (!file) return null;
+  return { content: file.buffer.toString("utf8"), sha: file.sha };
+}
+
+// Igual que getFile pero devuelve los bytes crudos (Buffer) sin decodificar
+// como texto -- para archivos binarios como las imagenes de portada.
+export async function getFileBuffer(path) {
+  const file = await getRawFile(path);
+  return file ? { content: file.buffer, sha: file.sha } : null;
+}
+
+async function getRawFile(path) {
   const res = await githubRequest(`/contents/${path}?ref=${BRANCH}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitHub getFile(${path}) -> ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return { content: Buffer.from(data.content, "base64").toString("utf8"), sha: data.sha };
+  return { buffer: Buffer.from(data.content, "base64"), sha: data.sha };
 }
 
 // Crea o actualiza un archivo (detecta el sha actual solo si no se paso).

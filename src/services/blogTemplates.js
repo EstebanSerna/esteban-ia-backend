@@ -63,10 +63,14 @@ function escapeHtmlAttr(str) {
   return String(str || "").replace(/"/g, "&quot;");
 }
 
-export function renderPostPage(article, { publishedAt, isDraft }) {
+export function renderPostPage(article, { publishedAt, isDraft, hasCoverImage }) {
   const dateIso = publishedAt.toISOString();
   const dateDisplay = publishedAt.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
   const url = `${SITE_URL}/blog/posts/${article.slug}.html`;
+  const folder = isDraft ? "drafts" : "posts";
+  const imageUrl = hasCoverImage
+    ? `${SITE_URL}/blog/${folder}/${article.slug}-cover.png`
+    : `${SITE_URL}/images/ai_business_hero.jpg`;
 
   const sourcesHtml = (article.sources && article.sources.length)
     ? `
@@ -93,7 +97,7 @@ export function renderPostPage(article, { publishedAt, isDraft }) {
   <meta property="og:url" content="${url}">
   <meta property="og:title" content="${escapeHtmlAttr(article.title)}">
   <meta property="og:description" content="${escapeHtmlAttr(article.metaDescription)}">
-  <meta property="og:image" content="${SITE_URL}/images/ai_business_hero.jpg">
+  <meta property="og:image" content="${imageUrl}">
   <meta property="og:locale" content="es_CO">
   <meta property="og:site_name" content="Esteban Serna | Esteban IA">
   <meta name="twitter:card" content="summary_large_image">
@@ -114,7 +118,7 @@ export function renderPostPage(article, { publishedAt, isDraft }) {
     "author": { "@type": "Person", "name": "Esteban Serna" },
     "publisher": { "@type": "Organization", "name": "Esteban IA", "url": "${SITE_URL}/" },
     "mainEntityOfPage": { "@type": "WebPage", "@id": "${url}" },
-    "image": "${SITE_URL}/images/ai_business_hero.jpg"
+    "image": "${imageUrl}"
   }
   </script>
 </head>
@@ -126,7 +130,8 @@ ${HEADER_HTML}
       ${isDraft ? '<div style="background: rgba(212,175,55,0.12); border: 1px solid var(--gold-border); border-radius: 10px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px; color: var(--gold-light);">🔒 Borrador sin publicar — no indexado, no aparece en el blog ni en el sitemap todavía.</div>' : ""}
       <div class="section-tagline">BLOG · ESTEBAN IA</div>
       <h1 style="font-size: 32px; line-height: 1.25; margin: 10px 0 14px;" class="text-gradient">${escapeHtmlAttr(article.title)}</h1>
-      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 32px;">Publicado el ${dateDisplay} · Esteban Serna</p>
+      <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 24px;">Publicado el ${dateDisplay} · Esteban Serna</p>
+      ${hasCoverImage ? `<img src="${imageUrl}" alt="${escapeHtmlAttr(article.title)}" style="width: 100%; border-radius: 14px; margin-bottom: 32px; border: 1px solid var(--gold-border);">` : ""}
       <article style="color: var(--text-secondary); font-size: 16px; line-height: 1.85;">
         ${article.bodyHtml}
       </article>
@@ -147,10 +152,13 @@ export function renderIndexPage(posts) {
     .slice()
     .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
     .map((p) => `
-        <a href="${SITE_URL}/blog/posts/${p.slug}.html" class="insight-card" style="text-decoration:none; display:block;">
-          <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">${new Date(p.publishedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</div>
-          <h3 class="insight-card-title">${escapeHtmlAttr(p.title)}</h3>
-          <p class="insight-card-text">${escapeHtmlAttr(p.excerpt)}</p>
+        <a href="${SITE_URL}/blog/posts/${p.slug}.html" class="insight-card" style="text-decoration:none; display:block; overflow:hidden; padding:0;">
+          ${p.hasCoverImage ? `<img src="${SITE_URL}/blog/posts/${p.slug}-cover.png" alt="${escapeHtmlAttr(p.title)}" style="width:100%; height:160px; object-fit:cover; display:block;">` : ""}
+          <div style="padding: 20px;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">${new Date(p.publishedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</div>
+            <h3 class="insight-card-title">${escapeHtmlAttr(p.title)}</h3>
+            <p class="insight-card-text">${escapeHtmlAttr(p.excerpt)}</p>
+          </div>
         </a>`)
     .join("\n");
 

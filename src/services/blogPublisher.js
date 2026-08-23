@@ -1,5 +1,6 @@
-import { getFile, putFile, deleteFile } from "./github.js";
+import { getFile, getFileBuffer, putFile, deleteFile } from "./github.js";
 import { renderPostPage, renderIndexPage } from "./blogTemplates.js";
+import { generateCoverImagePng } from "./coverImage.js";
 
 const SITE_URL = "https://esteban-serna.com";
 
@@ -15,7 +16,16 @@ export async function saveDraft(article) {
     `Blog: borrador generado - ${article.title}`
   );
 
-  const html = renderPostPage(article, { publishedAt: new Date(), isDraft: true });
+  let hasCoverImage = false;
+  try {
+    const coverPng = await generateCoverImagePng(article.title);
+    await putFile(`blog/drafts/${article.slug}-cover.png`, coverPng, `Blog: portada del borrador - ${article.title}`);
+    hasCoverImage = true;
+  } catch (err) {
+    console.error("No se pudo generar la imagen de portada (no bloquea el borrador):", err.message);
+  }
+
+  const html = renderPostPage(article, { publishedAt: new Date(), isDraft: true, hasCoverImage });
   await putFile(
     `blog/drafts/${article.slug}.html`,
     html,
@@ -41,7 +51,14 @@ export async function publishDraft(slug) {
 
   const publishedAt = new Date();
 
-  const html = renderPostPage(article, { publishedAt, isDraft: false });
+  // Mueve la imagen de portada del borrador a la carpeta publicada (si se
+  // alcanzo a generar bien) en vez de regenerarla dos veces.
+  const draftCover = await getFileBuffer(`blog/drafts/${slug}-cover.png`);
+  if (draftCover) {
+    await putFile(`blog/posts/${slug}-cover.png`, draftCover.content, `Blog: portada de "${article.title}"`);
+  }
+
+  const html = renderPostPage(article, { publishedAt, isDraft: false, hasCoverImage: !!draftCover });
   await putFile(`blog/posts/${slug}.html`, html, `Blog: publicar "${article.title}"`);
 
   const manifest = await getPostsManifest();
@@ -49,7 +66,8 @@ export async function publishDraft(slug) {
     slug: article.slug,
     title: article.title,
     excerpt: article.excerpt,
-    publishedAt: publishedAt.toISOString()
+    publishedAt: publishedAt.toISOString(),
+    hasCoverImage: !!draftCover
   };
   const updatedManifest = [...manifest.filter((p) => p.slug !== slug), entry];
   await putFile(
@@ -65,6 +83,9 @@ export async function publishDraft(slug) {
 
   await deleteFile(`blog/drafts/${slug}.json`, `Blog: limpiar borrador ya publicado - ${article.title}`);
   await deleteFile(`blog/drafts/${slug}.html`, `Blog: limpiar borrador ya publicado - ${article.title}`);
+  if (draftCover) {
+    await deleteFile(`blog/drafts/${slug}-cover.png`, `Blog: limpiar portada del borrador ya publicado - ${article.title}`);
+  }
 
   return entry;
 }
@@ -73,6 +94,7 @@ export async function discardDraft(slug) {
   const article = await getDraft(slug);
   await deleteFile(`blog/drafts/${slug}.json`, `Blog: descartar borrador - ${slug}`);
   await deleteFile(`blog/drafts/${slug}.html`, `Blog: descartar borrador - ${slug}`);
+  await deleteFile(`blog/drafts/${slug}-cover.png`, `Blog: descartar borrador - ${slug}`);
   return article;
 }
 
