@@ -27,7 +27,12 @@ const CHECKOUT_RATE_LIMIT_PER_MINUTE = 10;
 
 const app = express();
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "*" }));
-app.use(express.json({ limit: "1mb" }));
+// El frontend manda Content-Type: text/plain a propósito (evita el
+// preflight de CORS -- es el mismo truco que usaba con Apps Script), asi
+// que hay que parsear el body como JSON sin importar el Content-Type que
+// venga, en vez del "application/json" exacto que exige express.json()
+// por defecto.
+app.use(express.json({ limit: "1mb", type: () => true }));
 
 // Healthcheck para Railway.
 app.get("/", (_req, res) => res.status(200).json({ ok: true, service: "esteban-ia-backend" }));

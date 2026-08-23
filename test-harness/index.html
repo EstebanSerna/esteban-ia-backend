@@ -2,30 +2,35 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Prueba aislada: suscripcion Railway (no cobra nada)</title>
+<title>Prueba aislada: checkout completo contra Railway</title>
 <script src="https://sdk.mercadopago.com/js/v2"></script>
 <style>
   body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
   label { display: block; margin-top: 12px; font-size: 13px; font-weight: bold; }
   input, .field { width: 100%; box-sizing: border-box; padding: 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; height: 38px; }
-  button { margin-top: 20px; width: 100%; padding: 12px; background: #d4af37; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-  pre { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 12px; }
+  button { margin-top: 20px; width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+  #btnTestSub { background: #999; }
+  #btnFullCheckout { background: #d4af37; }
+  pre { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 12px; max-height: 400px; overflow: auto; }
   h3 { color: #a00; }
+  .warn { background: #fffae0; border: 1px solid #d4af37; padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
 </style>
 </head>
 <body>
-  <h1>Prueba aislada de suscripción</h1>
-  <p>Esta página NO cobra nada — solo genera un token de tarjeta (gratis) y prueba la creación de
-  la suscripción contra el backend nuevo de Railway. No toca el sitio en vivo.</p>
+  <h1>Prueba aislada del checkout</h1>
+  <p>No toca el sitio en vivo. Dos botones: uno prueba SOLO la suscripción (gratis), el otro prueba
+  el flujo COMPLETO (pago único real de $50.000 COP + suscripción) contra el backend de Railway.</p>
 
   <label>Nombre igual que en la tarjeta</label>
   <input id="name" value="Test Esteban">
   <label>Tipo de documento</label>
   <input id="docType" value="CC">
-  <label>Número de documento</label>
-  <input id="docNumber" value="1000000000">
+  <label>Número de documento (usa uno real para la suscripción)</label>
+  <input id="docNumber" value="">
   <label>Correo</label>
   <input id="email" value="prueba@esteban-serna.com">
+  <label>WhatsApp (para probar el mensaje de bienvenida, formato +57...)</label>
+  <input id="whatsapp" value="">
   <label>Número de tarjeta</label>
   <div id="cardNumber" class="field"></div>
   <label>Vencimiento (MM/AA)</label>
@@ -33,7 +38,10 @@
   <label>CVV</label>
   <div id="cvv" class="field"></div>
 
-  <button id="btnTest">Probar suscripción (no cobra)</button>
+  <button id="btnTestSub">🧪 Solo probar suscripción (no cobra nada)</button>
+  <button id="btnFullCheckout">💳 Probar flujo COMPLETO (cobra $50.000 COP real)</button>
+  <div class="warn">⚠️ El segundo botón SÍ cobra dinero real ($50.000 COP) a la tarjeta que pongas arriba.</div>
+
   <pre id="output">Esperando...</pre>
 
 <script>
@@ -41,37 +49,104 @@
   const MP_PUBLIC_KEY = "APP_USR-571a6f8c-dc56-47c6-92e3-858492e3b614";
 
   const mp = new MercadoPago(MP_PUBLIC_KEY, { locale: "es-CO" });
-  mp.fields.create("cardNumber", { placeholder: "•••• •••• •••• ••••" }).mount("cardNumber");
+  const cardNumberField = mp.fields.create("cardNumber", { placeholder: "•••• •••• •••• ••••" }).mount("cardNumber");
   mp.fields.create("expirationDate", { placeholder: "MM/AA" }).mount("expiration");
   mp.fields.create("securityCode", { placeholder: "CVV" }).mount("cvv");
 
-  document.getElementById("btnTest").addEventListener("click", async () => {
+  let detectedPaymentMethodId = null;
+  let detectedIssuerId = null;
+  cardNumberField.on("binChange", async (data) => {
+    try {
+      const bin = data && data.bin;
+      if (!bin) { detectedPaymentMethodId = null; detectedIssuerId = null; return; }
+      const { results } = await mp.getPaymentMethods({ bin });
+      if (results && results[0]) {
+        detectedPaymentMethodId = results[0].id;
+        detectedIssuerId = (results[0].issuer && results[0].issuer.id) || null;
+      }
+    } catch (err) {
+      detectedPaymentMethodId = null;
+    }
+  });
+
+  function formValues() {
+    return {
+      cardholderName: document.getElementById("name").value,
+      docType: document.getElementById("docType").value,
+      docNumber: document.getElementById("docNumber").value,
+      payerEmail: document.getElementById("email").value,
+      payerWhatsapp: document.getElementById("whatsapp").value
+    };
+  }
+
+  document.getElementById("btnTestSub").addEventListener("click", async () => {
     const output = document.getElementById("output");
+    const v = formValues();
     output.textContent = "Generando token (gratis, no cobra)...";
     try {
       const tokenRes = await mp.fields.createCardToken({
-        cardholderName: document.getElementById("name").value,
-        identificationType: document.getElementById("docType").value,
-        identificationNumber: document.getElementById("docNumber").value
+        cardholderName: v.cardholderName, identificationType: v.docType, identificationNumber: v.docNumber
       });
-
-      output.textContent = "Token generado: " + tokenRes.id + "\nProbando suscripción en Railway...";
-
+      output.textContent = "Token generado. Probando suscripción en Railway...";
       const res = await fetch(RAILWAY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "mp_test_subscription",
           subscriptionToken: tokenRes.id,
-          payerEmail: document.getElementById("email").value,
-          docType: document.getElementById("docType").value,
-          docNumber: document.getElementById("docNumber").value,
-          cardholderName: document.getElementById("name").value,
+          payerEmail: v.payerEmail,
+          docType: v.docType,
+          docNumber: v.docNumber,
+          cardholderName: v.cardholderName,
           monthlyAmount: 10000
         })
       });
-      const data = await res.json();
-      output.textContent = JSON.stringify(data, null, 2);
+      output.textContent = JSON.stringify(await res.json(), null, 2);
+    } catch (err) {
+      output.textContent = "ERROR: " + (err.message || JSON.stringify(err));
+    }
+  });
+
+  document.getElementById("btnFullCheckout").addEventListener("click", async () => {
+    const output = document.getElementById("output");
+    const v = formValues();
+    if (!detectedPaymentMethodId) {
+      output.textContent = "Termina de escribir el número de tarjeta para detectar el medio de pago.";
+      return;
+    }
+    if (!confirm("Esto va a cobrar $50.000 COP REALES a la tarjeta. ¿Continuar?")) return;
+
+    output.textContent = "Generando 2 tokens (pago único + suscripción)...";
+    try {
+      const tokenData = { cardholderName: v.cardholderName, identificationType: v.docType, identificationNumber: v.docNumber };
+      const [oneTimeTokenRes, subscriptionTokenRes] = await Promise.all([
+        mp.fields.createCardToken(tokenData),
+        mp.fields.createCardToken(tokenData)
+      ]);
+
+      output.textContent = "Procesando el checkout completo en Railway...";
+      const res = await fetch(RAILWAY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mp_checkout",
+          serviceKey: "Asistente Basico WhatsApp",
+          planTitle: "Asistente para Redes Sociales & WhatsApp",
+          oneTimeAmount: 50000,
+          monthlyAmount: 5000,
+          oneTimeToken: oneTimeTokenRes.id,
+          subscriptionToken: subscriptionTokenRes.id,
+          paymentMethodId: detectedPaymentMethodId,
+          issuerId: detectedIssuerId,
+          payerEmail: v.payerEmail,
+          payerWhatsapp: v.payerWhatsapp,
+          docType: v.docType,
+          docNumber: v.docNumber,
+          cardholderName: v.cardholderName,
+          deviceId: window.MP_DEVICE_SESSION_ID || null
+        })
+      });
+      output.textContent = JSON.stringify(await res.json(), null, 2);
     } catch (err) {
       output.textContent = "ERROR: " + (err.message || JSON.stringify(err));
     }
