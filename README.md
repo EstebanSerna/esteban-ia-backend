@@ -8,6 +8,9 @@ proyecto de la landing (`esteban-serna.com`). Maneja:
 - Checkout de Mercado Pago (pago único + suscripción mensual con un segundo token de la misma
   tarjeta) y su Webhook de notificaciones.
 - Notificaciones por correo (Resend) y WhatsApp (Meta Cloud API) al completar una venta.
+- Blog automático: cada 3 días investiga un tema con Claude (búsqueda web real) y escribe un
+  artículo 100% original, genera su portada, y manda un correo para aprobarlo o descartarlo antes
+  de publicarlo en `esteban-serna.com/blog/` (ver sección "Blog automático" más abajo).
 
 Toda la lógica es la misma que ya estaba probada en Apps Script — se migró para tener logs reales,
 despliegue automático por git push, y el SDK oficial de Mercado Pago.
@@ -75,12 +78,26 @@ libre; si Meta lo rechaza por esto, el error queda registrado en los logs pero n
 del flujo (el correo de bienvenida sí llega).
 
 ### 5. Claude
-- `ANTHROPIC_API_KEY`: la misma que ya usabas en Apps Script.
+- `ANTHROPIC_API_KEY`: la misma que ya usabas en Apps Script. También la usa el blog automático
+  (investiga con la herramienta oficial de búsqueda web de Claude y escribe el artículo).
 
-### 6. Variables generales
-- `ESTEBAN_EMAIL`: correo que recibe las notificaciones internas de venta.
+### 6. Blog automático (GitHub como base de datos)
+- `GITHUB_TOKEN`: token de acceso personal (fine-grained), con permiso **Contents: Read/write**
+  únicamente sobre el repo `EstebanSerna/esteban-ia`. Se usa para leer/escribir los archivos del
+  blog (borradores, posts, `posts.json`, `sitemap.xml`) directamente vía la API de GitHub — no hay
+  base de datos aparte, el propio repo del frontend es el almacenamiento.
+- `BLOG_GITHUB_REPO`: opcional, por defecto `EstebanSerna/esteban-ia`.
+- `BLOG_APPROVAL_SECRET`: secreto para firmar (HMAC-SHA256) los enlaces "Publicar"/"Descartar" del
+  correo de revisión — no se guarda ningún token, se recalcula y compara en cada clic. Generar uno
+  con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y no cambiarlo
+  después (invalidaría cualquier correo de aprobación pendiente).
+
+### 7. Variables generales
+- `ESTEBAN_EMAIL`: correo que recibe las notificaciones internas de venta y los borradores del blog
+  para aprobar.
 - `PUBLIC_BASE_URL`: la URL pública de este servicio en Railway (para `notification_url` de
-  Mercado Pago) — Railway te la da al generar el dominio del servicio.
+  Mercado Pago y para los enlaces de aprobación del blog) — Railway te la da al generar el dominio
+  del servicio.
 - `ALLOWED_ORIGIN`: `https://esteban-serna.com` (para CORS).
 
 ---
@@ -101,6 +118,59 @@ un Webhook de Mercado Pago):
 
 `GET /` es el healthcheck que usa Railway.
 
+Además, dos rutas propias del blog (enlaces del correo de aprobación, no pensadas para llamarse a
+mano):
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /blog/approve?slug=...&token=...` | Publica el borrador: crea la página, actualiza el índice, `posts.json` y `sitemap.xml`, y borra el borrador |
+| `GET /blog/discard?slug=...&token=...` | Borra el borrador sin publicar nada |
+
+---
+
+## Blog automático
+
+Cada día a las 9am (`America/Bogota`) corre un cron (`node-cron`, ver `src/blogScheduler.js`), pero
+solo genera un artículo si han pasado 3 días desde el último — no hay que administrar fechas, se
+calcula sola comparando el día actual contra un contador en memoria (si el proceso se reinicia justo
+ese día, en el peor caso se genera un artículo con 1 día de diferencia, no es grave).
+
+**Flujo completo:**
+1. Se elige un tema de una lista rotativa de 15 (`src/services/blogTopics.js`, basada en la fecha —
+   sin estado persistido).
+2. Claude investiga el tema con su herramienta oficial de búsqueda web (hasta 5 búsquedas) y escribe
+   un artículo 100% original (nunca copia las fuentes) — ver `src/services/blogGenerator.js`. El
+   precio real de los planes va inyectado en el prompt para que Claude nunca invente cifras, y el
+   prompt prohíbe explícitamente mencionar herramientas como Make o n8n (se habla de "agentes",
+   "automatización de procesos" en términos genéricos).
+3. Se genera una imagen de portada (1200×630, on-brand, sin fotos de stock) con `satori` +
+   `@resvg/resvg-js` — ver `src/services/coverImage.js`.
+4. Todo se sube como **borrador** al repo `esteban-ia` vía la API de GitHub (`blog/drafts/{slug}.*`
+   — no enlazado desde ningún lado, bloqueado en `robots.txt`, con `noindex,nofollow`) — ver
+   `src/services/github.js` y `src/services/blogPublisher.js`.
+5. Llega un correo a `ESTEBAN_EMAIL` con el artículo completo, un enlace de vista previa, y dos
+   botones: **Publicar** / **Descartar** (enlaces firmados con `BLOG_APPROVAL_SECRET`, sin estado
+   que expire ni se pueda perder — ver `src/services/blogApproval.js`).
+6. Al hacer clic, `GET /blog/approve` o `GET /blog/discard` ejecutan la acción. Publicar mueve los
+   archivos de `blog/drafts/` a `blog/posts/`, regenera `blog/index.html`, actualiza `posts.json` y
+   agrega la URL a `sitemap.xml` — todo en commits separados al repo del frontend, que dispara su
+   propio despliegue por GitHub Actions.
+
+**Para disparar la generación manualmente** (sin esperar el cron), no hay una ruta HTTP para esto
+— usa la consola de Railway (`railway run node -e "import('./src/blogScheduler.js').then(m => m.generateAndNotify())"`)
+o corre el mismo código en local con las variables de entorno cargadas.
+
+**Re-generar posts ya publicados** (por ejemplo tras un cambio de plantilla/footer) tampoco tiene
+ruta HTTP — son funciones internas (`regeneratePost`/`regenerateAll`/`regenerateIndex` en
+`src/services/blogPublisher.js`) pensadas para llamarse igual, desde una consola puntual, cuando
+haga falta. Se quitaron sus rutas `/debug/*` una vez cumplieron su propósito inicial (ver historial
+de git si hace falta recuperarlas).
+
+**Limitación conocida:** `regeneratePost` necesita `blog/posts/{slug}.json` (los datos completos del
+artículo, no solo el HTML). Los posts publicados después de que esto se agregó lo tienen; el primer
+post publicado (antes de este cambio) no, así que no se puede regenerar automáticamente — habría que
+reconstruir su JSON a mano si algún día necesita una plantilla nueva.
+
 ---
 
 ## Diseño: por qué no hay base de datos
@@ -110,6 +180,11 @@ Los datos del checkout que hacen falta para retomar la suscripción si el pago q
 propio pago en Mercado Pago — no en una base de datos propia. Cuando llega el Webhook, se vuelve a
 pedir ese mismo pago por su id y se lee la metadata desde ahí. Esto es intencional: mantiene el
 servicio sin estado (aparte de un set en memoria para no procesar el mismo Webhook dos veces).
+
+El blog sigue la misma filosofía: en vez de una base de datos, el propio repo `esteban-ia` en
+GitHub es el almacenamiento (borradores, posts, manifiesto, sitemap), y los enlaces de aprobación
+del correo son tokens firmados sin estado (se verifican recalculando el HMAC, no consultando ningún
+registro).
 
 ---
 
