@@ -133,6 +133,17 @@ async function handleCheckout(data) {
   const payment = await createOneTimePayment(data);
   console.log(`Pago /v1/payments -> status=${payment.status} status_detail=${payment.status_detail} id=${payment.id}`);
 
+  // Si el pago se resolvio al instante (no quedo pendiente), se marca ya
+  // mismo como "procesado" para el Webhook -- Mercado Pago suele avisar el
+  // Webhook casi en simultaneo, y sin este marcador el Webhook intenta
+  // activar la MISMA suscripcion en paralelo con este mismo flujo, usando
+  // el mismo subscriptionToken (de un solo uso) -- el que llega segundo
+  // falla con un error de tarjeta que no tiene nada que ver con la tarjeta
+  // en si. Solo debe actuar el Webhook cuando el pago SI quedo pendiente.
+  if (payment.status !== "in_process" && payment.status !== "pending") {
+    processedWebhookPaymentIds.add(String(payment.id));
+  }
+
   if (payment.status === "in_process" || payment.status === "pending") {
     await notifyPendingPayment(data, payment);
     return {
