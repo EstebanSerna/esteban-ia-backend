@@ -98,6 +98,16 @@ export async function discardDraft(slug) {
   return article;
 }
 
+// Regenera blog/index.html a partir del manifiesto actual, sin necesidad
+// de publicar nada nuevo -- util para aplicar cambios de diseno de la
+// plantilla del indice a posts que ya estaban publicados.
+export async function regenerateIndex() {
+  const manifest = await getPostsManifest();
+  const indexHtml = renderIndexPage(manifest);
+  await putFile("blog/index.html", indexHtml, "Blog: regenerar índice (cambio de diseño)");
+  return manifest.length;
+}
+
 async function getPostsManifest() {
   const file = await getFile("blog/posts.json");
   if (!file) return [];

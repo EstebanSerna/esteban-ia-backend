@@ -23,7 +23,7 @@ import {
 import { formatCOP } from "./utils/format.js";
 import { debugCheckWhatsAppConfig } from "./services/whatsapp.js";
 import { startBlogScheduler, generateAndNotify } from "./blogScheduler.js";
-import { publishDraft, discardDraft } from "./services/blogPublisher.js";
+import { publishDraft, discardDraft, regenerateIndex } from "./services/blogPublisher.js";
 import { verifyApprovalToken } from "./services/blogApproval.js";
 
 const CHAT_RATE_LIMIT_PER_MINUTE = 20;
@@ -49,6 +49,20 @@ app.get("/debug/whatsapp", async (_req, res) => {
     res.json(await debugCheckWhatsAppConfig());
   } catch (err) {
     res.status(200).json({ error: err.message });
+  }
+});
+
+// TEMPORAL -- reconstruye blog/index.html desde el manifiesto actual, para
+// aplicar cambios de diseno de la plantilla a posts que ya se publicaron.
+app.get("/debug/regenerate-blog-index", async (req, res) => {
+  try {
+    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
+      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
+    }
+    const count = await regenerateIndex();
+    res.json({ success: true, posts: count });
+  } catch (err) {
+    res.status(200).json({ success: false, error: err.message });
   }
 });
 

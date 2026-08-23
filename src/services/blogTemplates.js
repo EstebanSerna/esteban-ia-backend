@@ -153,7 +153,7 @@ export function renderIndexPage(posts) {
     .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
     .map((p) => `
         <a href="${SITE_URL}/blog/posts/${p.slug}.html" class="insight-card" style="text-decoration:none; display:block; overflow:hidden; padding:0;">
-          ${p.hasCoverImage ? `<img src="${SITE_URL}/blog/posts/${p.slug}-cover.png" alt="${escapeHtmlAttr(p.title)}" style="width:100%; height:160px; object-fit:cover; display:block;">` : ""}
+          ${p.hasCoverImage ? `<img src="${SITE_URL}/blog/posts/${p.slug}-cover.png" alt="${escapeHtmlAttr(p.title)}" style="width:100%; aspect-ratio: 1200 / 630; object-fit:cover; display:block;">` : ""}
           <div style="padding: 20px;">
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">${new Date(p.publishedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</div>
             <h3 class="insight-card-title">${escapeHtmlAttr(p.title)}</h3>
