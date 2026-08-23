@@ -22,6 +22,9 @@ import {
 } from "./services/notifications.js";
 import { formatCOP } from "./utils/format.js";
 import { debugCheckWhatsAppConfig } from "./services/whatsapp.js";
+import { startBlogScheduler, generateAndNotify } from "./blogScheduler.js";
+import { publishDraft, discardDraft } from "./services/blogPublisher.js";
+import { verifyApprovalToken } from "./services/blogApproval.js";
 
 const CHAT_RATE_LIMIT_PER_MINUTE = 20;
 const CHECKOUT_RATE_LIMIT_PER_MINUTE = 10;
@@ -46,6 +49,59 @@ app.get("/debug/whatsapp", async (_req, res) => {
     res.json(await debugCheckWhatsAppConfig());
   } catch (err) {
     res.status(200).json({ error: err.message });
+  }
+});
+
+// TEMPORAL -- dispara la generacion de un articulo de blog de inmediato,
+// sin esperar al cron de cada 3 dias (para probar el pipeline completo una
+// vez). Pide el mismo secreto de aprobacion como llave simple para que no
+// cualquiera pueda disparar llamadas costosas a Claude + busqueda web.
+app.get("/debug/generate-blog-draft", async (req, res) => {
+  try {
+    if (req.query.key !== process.env.BLOG_APPROVAL_SECRET) {
+      return res.status(403).json({ error: "Falta o es incorrecta la llave" });
+    }
+    const article = await generateAndNotify();
+    res.json({ success: true, slug: article.slug, title: article.title });
+  } catch (err) {
+    console.error("Error generando articulo de blog manual:", err);
+    res.status(200).json({ success: false, error: err.message });
+  }
+});
+
+function approvalResultPage(title, message, color) {
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${title}</title>
+  <style>body{font-family:Arial,sans-serif;background:#040405;color:#f0f0f5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px;}
+  .box{max-width:480px;} h1{color:${color};font-size:22px;} p{color:#9090a0;font-size:14px;}</style></head>
+  <body><div class="box"><h1>${title}</h1><p>${message}</p></div></body></html>`;
+}
+
+// Enlaces del correo de revision del blog.
+app.get("/blog/approve", async (req, res) => {
+  const { slug, token } = req.query;
+  if (!slug || !verifyApprovalToken(slug, "publish", token)) {
+    return res.status(403).send(approvalResultPage("Enlace inválido", "Este enlace ya se usó o no es válido.", "#e74c3c"));
+  }
+  try {
+    const entry = await publishDraft(slug);
+    res.send(approvalResultPage("✅ Publicado", `"${entry.title}" ya está en vivo en el blog.`, "#2ecc71"));
+  } catch (err) {
+    console.error("Error publicando articulo de blog:", err);
+    res.status(200).send(approvalResultPage("Error al publicar", err.message, "#e74c3c"));
+  }
+});
+
+app.get("/blog/discard", async (req, res) => {
+  const { slug, token } = req.query;
+  if (!slug || !verifyApprovalToken(slug, "discard", token)) {
+    return res.status(403).send(approvalResultPage("Enlace inválido", "Este enlace ya se usó o no es válido.", "#e74c3c"));
+  }
+  try {
+    await discardDraft(slug);
+    res.send(approvalResultPage("🗑️ Descartado", "El borrador se eliminó, no se publicó nada.", "#f1c40f"));
+  } catch (err) {
+    console.error("Error descartando articulo de blog:", err);
+    res.status(200).send(approvalResultPage("Error al descartar", err.message, "#e74c3c"));
   }
 });
 
@@ -306,4 +362,7 @@ async function handleTestSubscription(data) {
 }
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`esteban-ia-backend escuchando en el puerto ${port}`));
+app.listen(port, () => {
+  console.log(`esteban-ia-backend escuchando en el puerto ${port}`);
+  startBlogScheduler();
+});

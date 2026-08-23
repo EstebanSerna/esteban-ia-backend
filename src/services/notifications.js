@@ -5,6 +5,45 @@ import { formatCOP, formatSpanishDate, escapeHtml } from "../utils/format.js";
 const ESTEBAN_EMAIL = process.env.ESTEBAN_EMAIL || "esteban.serna.garcia@gmail.com";
 const BOOKING_URL = "https://esteban-serna.com/#reservar";
 
+// Correo con el articulo nuevo listo para revisar, y los dos botones de
+// accion (publicar / descartar) -- el articulo NO sale en vivo hasta que
+// se le de clic a "Publicar".
+export async function notifyBlogDraftReady(article, { approveUrl, discardUrl, previewUrl }) {
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; color: #1a1a1a;">
+      <div style="background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%); padding: 24px 28px; border-radius: 10px 10px 0 0;">
+        <div style="font-size: 20px; font-weight: 700; color: #1a1a1a;">Esteban IA — Blog</div>
+        <div style="font-size: 11px; color: #3a3a3a; letter-spacing: 1px; text-transform: uppercase;">Nuevo artículo listo para revisar</div>
+      </div>
+      <div style="border: 1px solid #e5e5e5; border-top: none; border-radius: 0 0 10px 10px; padding: 28px;">
+        <h2 style="font-size: 20px; margin: 0 0 6px;">${escapeHtml(article.title)}</h2>
+        <p style="font-size: 13px; color: #666; margin: 0 0 20px;">${escapeHtml(article.excerpt)}</p>
+
+        <p style="text-align:center; margin-bottom: 16px;">
+          <a href="${previewUrl}" style="color: #a67c00; font-size: 13px;">👁️ Ver el artículo completo antes de decidir</a>
+        </p>
+
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${approveUrl}" style="background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%); color: #1a1a1a; text-decoration: none; font-weight: 700; padding: 12px 28px; border-radius: 8px; display: inline-block; font-size: 14px; margin: 0 8px 10px;">✅ Publicar</a>
+          <a href="${discardUrl}" style="background: #f0f0f0; color: #444; text-decoration: none; font-weight: 700; padding: 12px 28px; border-radius: 8px; display: inline-block; font-size: 14px; margin: 0 8px 10px;">🗑️ Descartar</a>
+        </div>
+
+        <p style="font-size: 12px; color: #999; text-align: center;">Si no haces nada, el artículo se queda como borrador sin publicar — no afecta el sitio.</p>
+      </div>
+    </div>`;
+
+  try {
+    await sendEmail({
+      to: ESTEBAN_EMAIL,
+      subject: `📝 Nuevo artículo de blog para revisar: ${article.title}`,
+      text: `Nuevo artículo listo para revisar: "${article.title}"\n\n${article.excerpt}\n\nVerlo: ${previewUrl}\nPublicar: ${approveUrl}\nDescartar: ${discardUrl}`,
+      html
+    });
+  } catch (err) {
+    console.error("Fallo el envio del correo de borrador de blog:", err.message);
+  }
+}
+
 // Correo interno a Esteban: la senal para arrancar la implementacion.
 export async function notifySuccessfulSale(data, payment, subscription, subscriptionStartDate) {
   try {
