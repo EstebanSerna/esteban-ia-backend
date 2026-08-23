@@ -22,6 +22,12 @@ function getCalendarClient() {
   }
 
   const credentials = JSON.parse(rawKey);
+  // [DEBUG] No expone nada secreto -- el correo de una cuenta de servicio
+  // no es informacion sensible, sirve para confirmar que el JSON se leyo
+  // bien sin tener que ver la clave privada.
+  console.log(
+    `[DEBUG] Credenciales de Calendar cargadas: client_email=${credentials.client_email} project_id=${credentials.project_id} private_key_presente=${!!credentials.private_key} private_key_len=${(credentials.private_key || "").length}`
+  );
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/calendar"]
