@@ -1,0 +1,21 @@
+{
+  "name": "esteban-ia-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend de Esteban IA: reservas + Calendar, proxy de chat con Claude, checkout de Mercado Pago (pago unico + suscripcion), notificaciones por correo y WhatsApp.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "google-auth-library": "^9.14.1",
+    "googleapis": "^140.0.1",
+    "mercadopago": "^2.2.0",
+    "resend": "^4.0.1"
+  }
+}
