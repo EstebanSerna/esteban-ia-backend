@@ -21,6 +21,7 @@ import {
   notifyPendingResolvedAsRejected
 } from "./services/notifications.js";
 import { formatCOP } from "./utils/format.js";
+import { debugCheckWhatsAppConfig } from "./services/whatsapp.js";
 
 const CHAT_RATE_LIMIT_PER_MINUTE = 20;
 const CHECKOUT_RATE_LIMIT_PER_MINUTE = 10;
@@ -36,6 +37,17 @@ app.use(express.json({ limit: "1mb", type: () => true }));
 
 // Healthcheck para Railway.
 app.get("/", (_req, res) => res.status(200).json({ ok: true, service: "esteban-ia-backend" }));
+
+// TEMPORAL -- solo consulta (no envia nada) los datos del numero de
+// WhatsApp configurado, para diagnosticar el WHATSAPP_PHONE_NUMBER_ID.
+// Quitar una vez resuelto.
+app.get("/debug/whatsapp", async (_req, res) => {
+  try {
+    res.json(await debugCheckWhatsAppConfig());
+  } catch (err) {
+    res.status(200).json({ error: err.message });
+  }
+});
 
 // Evita duplicar el procesamiento cuando Mercado Pago reintenta el mismo
 // aviso de Webhook varias veces seguidas (comportamiento normal de MP).

@@ -49,6 +49,29 @@ export async function sendWhatsAppText(toPhoneNumber, message) {
   return result;
 }
 
+// TEMPORAL -- herramienta de diagnostico: solo CONSULTA (no envia nada) los
+// datos del numero de WhatsApp Business asociado al WHATSAPP_PHONE_NUMBER_ID
+// configurado, para confirmar si el ID/token son validos y a que numero
+// corresponden de verdad. Quitar una vez resuelto el problema.
+export async function debugCheckWhatsAppConfig() {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const result = {
+    phoneNumberIdConfigured: phoneNumberId || null,
+    tokenPresente: !!token,
+    tokenLongitud: token ? token.length : 0
+  };
+  if (!token || !phoneNumberId) return result;
+
+  const response = await fetch(
+    `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  result.graphResponse = await response.json();
+  result.graphStatus = response.status;
+  return result;
+}
+
 // Quita espacios/guiones y exige formato internacional con "+". Devuelve
 // null si no se puede normalizar (para no intentar enviar algo invalido).
 function normalizePhoneNumber(raw) {
