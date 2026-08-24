@@ -29,7 +29,23 @@ const CHAT_RATE_LIMIT_PER_MINUTE = 20;
 const CHECKOUT_RATE_LIMIT_PER_MINUTE = 10;
 
 const app = express();
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "*" }));
+
+// ALLOWED_ORIGIN admite una lista separada por comas (ej. dominio raiz y
+// "www." al mismo tiempo) -- con un solo string fijo, cors() lo devuelve tal
+// cual sin importar el Origin real de la petición, y el navegador bloquea
+// la respuesta si no coincide EXACTO con el origen desde el que se navegó
+// (esteban-serna.com hace redirect a www.esteban-serna.com a nivel de
+// hosting, así que hacían falta los dos).
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*").split(",").map((o) => o.trim());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origen no permitido por CORS: ${origin}`));
+    }
+  }
+}));
 // El frontend manda Content-Type: text/plain a propósito (evita el
 // preflight de CORS -- es el mismo truco que usaba con Apps Script), asi
 // que hay que parsear el body como JSON sin importar el Content-Type que
