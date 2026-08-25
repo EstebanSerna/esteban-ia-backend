@@ -56,47 +56,62 @@ function buildConferenceData() {
   };
 }
 
+async function insertEvent(calendar, calendarId, requestBody, sendUpdates) {
+  const response = await calendar.events.insert({
+    calendarId,
+    requestBody,
+    conferenceDataVersion: 1,
+    sendUpdates
+  });
+  return { id: response.data.id, htmlLink: response.data.htmlLink, meetLink: extractMeetLink(response.data) };
+}
+
 // Crea un evento y devuelve { id, htmlLink, meetLink }. `attendeeEmail` es
 // opcional (invita al cliente por correo, igual que hacia CalendarApp con
-// sendInvites). htmlLink sirve para que el correo interno a Esteban pueda
-// enlazar directo al evento en su Calendar; meetLink es el link de Google
-// Meet generado automaticamente para la reunion (puede venir null si la
-// generacion de Meet falla -- no bloquea la creacion del evento).
+// sendInvites); meetLink es el link de Google Meet generado
+// automaticamente (puede venir null si Meet no se pudo generar -- pasa en
+// algunas cuentas personales sin Google Workspace, "Invalid conference
+// type value" -- no debe tumbar la reserva completa por eso).
+//
+// Se intenta en orden, cada vez con menos features, hasta que uno
+// funcione: (1) invitado + Meet, (2) invitado sin Meet, (3) ni invitado
+// ni Meet -- el minimo que deberia funcionar siempre.
 export async function createCalendarEvent({ summary, description, startDate, endDate, attendeeEmail }) {
   const calendar = getCalendarClient();
-
-  const event = {
+  const calendarId = getCalendarId();
+  const base = {
     summary,
     description,
     start: { dateTime: startDate.toISOString() },
-    end: { dateTime: endDate.toISOString() },
-    conferenceData: buildConferenceData()
+    end: { dateTime: endDate.toISOString() }
   };
-  if (attendeeEmail) {
-    event.attendees = [{ email: attendeeEmail }];
-  }
 
-  try {
-    const response = await calendar.events.insert({
-      calendarId: getCalendarId(),
-      requestBody: event,
-      conferenceDataVersion: 1,
-      sendUpdates: attendeeEmail ? "all" : "none"
+  const attempts = [];
+  if (attendeeEmail) {
+    attempts.push({
+      requestBody: { ...base, attendees: [{ email: attendeeEmail }], conferenceData: buildConferenceData() },
+      sendUpdates: "all"
     });
-    return { id: response.data.id, htmlLink: response.data.htmlLink, meetLink: extractMeetLink(response.data) };
-  } catch (err) {
-    // Fallback sin invitado, igual que el intento original en Apps Script,
-    // por si el envio de invitacion es lo que falla. Se mantiene el
-    // conferenceData para seguir intentando generar el link de Meet.
-    if (attendeeEmail) {
-      const response = await calendar.events.insert({
-        calendarId: getCalendarId(),
-        requestBody: { summary, description, start: event.start, end: event.end, conferenceData: buildConferenceData() },
-        conferenceDataVersion: 1,
-        sendUpdates: "none"
-      });
-      return { id: response.data.id, htmlLink: response.data.htmlLink, meetLink: extractMeetLink(response.data) };
-    }
-    throw err;
+    attempts.push({
+      requestBody: { ...base, attendees: [{ email: attendeeEmail }] },
+      sendUpdates: "all"
+    });
+  } else {
+    attempts.push({
+      requestBody: { ...base, conferenceData: buildConferenceData() },
+      sendUpdates: "none"
+    });
   }
+  attempts.push({ requestBody: { ...base }, sendUpdates: "none" });
+
+  let lastError;
+  for (const attempt of attempts) {
+    try {
+      return await insertEvent(calendar, calendarId, attempt.requestBody, attempt.sendUpdates);
+    } catch (err) {
+      lastError = err;
+      console.error("Intento de crear evento en Calendar fallo, probando el siguiente respaldo:", err.message);
+    }
+  }
+  throw lastError;
 }
