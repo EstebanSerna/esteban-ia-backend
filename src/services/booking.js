@@ -27,7 +27,18 @@ export function parseDateTime(dateStr, timeStr, serviceName) {
   if (ampm === "PM" && hours < 12) hours += 12;
   if (ampm === "AM" && hours === 12) hours = 0;
 
-  const startDate = new Date(year, month, day, hours, minutes, 0, 0);
+  // OJO: nunca usar `new Date(year, month, day, hours, minutes)` aqui --
+  // eso interpreta la hora en la zona horaria LOCAL del proceso que corre
+  // el codigo, que en el servidor real de Railway es UTC (no Colombia),
+  // aunque al probarlo con `railway run` en una maquina que SI esta en
+  // hora de Colombia parezca funcionar bien -- fue asi como se detecto
+  // este bug, con una reserva real que quedo guardada 5 horas antes de lo
+  // que el cliente selecciono. Colombia es UTC-5 fijo todo el ano (no
+  // tiene horario de verano), asi que construimos el instante UTC exacto
+  // sumando esas 5 horas explicitamente, sin depender de la zona horaria
+  // del servidor.
+  const COLOMBIA_UTC_OFFSET_HOURS = 5;
+  const startDate = new Date(Date.UTC(year, month, day, hours + COLOMBIA_UTC_OFFSET_HOURS, minutes, 0, 0));
 
   let durationMinutes = 30;
   const sName = serviceName.toLowerCase();
