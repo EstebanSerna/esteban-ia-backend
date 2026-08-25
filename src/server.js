@@ -18,7 +18,9 @@ import {
   sendWelcomeWhatsAppToCustomer,
   notifyPartialCheckoutFailure,
   notifyPendingPayment,
-  notifyPendingResolvedAsRejected
+  notifyPendingResolvedAsRejected,
+  notifyBookingConfirmedToClient,
+  notifyBookingConfirmedToEsteban
 } from "./services/notifications.js";
 import { formatCOP } from "./utils/format.js";
 import { startBlogScheduler } from "./blogScheduler.js";
@@ -166,7 +168,7 @@ async function handleBooking(data) {
     `💬 WhatsApp: ${data.whatsapp}\n🔗 Redes Sociales: ${data.social}\n🎯 Objetivo/Área de Apoyo: ${data.goal}\n\n` +
     `Creado automáticamente desde la web de Esteban IA.`;
 
-  const eventId = await createCalendarEvent({
+  const { id: eventId, htmlLink: eventLink, meetLink } = await createCalendarEvent({
     summary: `Sesión: ${data.name} (${data.service})`,
     description,
     startDate,
@@ -174,7 +176,16 @@ async function handleBooking(data) {
     attendeeEmail: data.email
   });
 
-  return { success: true, eventId, startTime: startDate.toISOString(), endTime: endDate.toISOString() };
+  // No bloquean la respuesta al cliente ni hacen fallar la reserva si el
+  // correo falla -- ambas funciones ya atrapan sus propios errores
+  // internamente (ver notifications.js), igual que el resto de correos
+  // del sitio.
+  await Promise.all([
+    notifyBookingConfirmedToClient(data, { startDate, endDate, meetLink }),
+    notifyBookingConfirmedToEsteban(data, { startDate, endDate, eventLink, meetLink })
+  ]);
+
+  return { success: true, eventId, meetLink, startTime: startDate.toISOString(), endTime: endDate.toISOString() };
 }
 
 async function handleCheckout(data) {

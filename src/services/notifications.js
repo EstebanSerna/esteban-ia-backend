@@ -1,6 +1,6 @@
 import { sendEmail } from "./email.js";
 import { sendWhatsAppText } from "./whatsapp.js";
-import { formatCOP, formatSpanishDate, escapeHtml } from "../utils/format.js";
+import { formatCOP, formatSpanishDate, formatSpanishDateTimeColombia, escapeHtml } from "../utils/format.js";
 
 const ESTEBAN_EMAIL = process.env.ESTEBAN_EMAIL || "esteban.serna.garcia@gmail.com";
 const BOOKING_URL = "https://esteban-serna.com/#reservar";
@@ -191,6 +191,103 @@ export async function notifyPendingPayment(data, payment) {
     });
   } catch (err) {
     console.error("Fallo el envio de correo de pago pendiente:", err.message);
+  }
+}
+
+// Correo de confirmación para quien reservó (diagnóstico gratis o una
+// sesión de un plan pagado, vía el calendario del sitio -- NO la compra
+// con tarjeta, esa ya tiene su propio correo en sendWelcomeEmailToCustomer).
+// meetLink es el link de Google Meet generado automáticamente por Calendar
+// al crear el evento (ver createCalendarEvent) -- si por algún motivo no
+// se generó, se es honesto y no se promete un enlace que no existe: se
+// avisa que llega por WhatsApp antes de la cita.
+export async function notifyBookingConfirmedToClient(data, { startDate, endDate, meetLink }) {
+  if (!data.email) return;
+
+  const rawFirstName = (data.name || "").trim().split(/\s+/)[0] || "";
+  const firstName = escapeHtml(rawFirstName);
+  const greetingHtml = firstName ? `Hola ${firstName},` : "Hola,";
+  const service = escapeHtml(data.service || "tu sesión");
+  const { dateStr, timeStr } = formatSpanishDateTimeColombia(startDate);
+  const durationMin = Math.round((endDate.getTime() - startDate.getTime()) / 60000);
+
+  const meetingHtml = meetLink
+    ? `<p style="text-align: center; margin: 24px 0;">
+        <a href="${meetLink}" style="background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%); color: #1a1a1a; text-decoration: none; font-weight: 700; padding: 12px 28px; border-radius: 8px; display: inline-block; font-size: 14px;">📹 Unirme por Google Meet</a>
+      </p>`
+    : `<p style="font-size: 13px; line-height: 1.6; color: #666;">Te vamos a compartir el enlace de la reunión por WhatsApp antes de la cita.</p>`;
+  const meetingText = meetLink
+    ? `Enlace de Google Meet: ${meetLink}\n`
+    : `Te compartiremos el enlace de la reunión por WhatsApp antes de la cita.\n`;
+
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 560px; margin: 0 auto; color: #1a1a1a;">
+      <div style="background: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%); padding: 24px 28px; border-radius: 10px 10px 0 0;">
+        <div style="margin: 0; font-size: 20px; font-weight: 700; color: #1a1a1a;">Esteban IA</div>
+        <div style="margin: 4px 0 0; font-size: 11px; color: #3a3a3a; letter-spacing: 1px; text-transform: uppercase;">Reserva confirmada</div>
+      </div>
+      <div style="border: 1px solid #e5e5e5; border-top: none; border-radius: 0 0 10px 10px; padding: 28px;">
+        <p style="font-size: 16px; margin-top: 0;">${greetingHtml}</p>
+        <p style="font-size: 14px; line-height: 1.6;">Tu reserva para <strong>${service}</strong> quedó confirmada:</p>
+        <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+          <tr><td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">Fecha</td><td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; font-weight: 600;">${dateStr}</td></tr>
+          <tr><td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">Hora (Colombia)</td><td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; font-weight: 600;">${timeStr}</td></tr>
+          <tr><td style="padding: 10px 0; color: #666;">Duración</td><td style="padding: 10px 0; text-align: right; font-weight: 600;">${durationMin} min</td></tr>
+        </table>
+        ${meetingHtml}
+        <p style="font-size: 13px; line-height: 1.6; color: #666;">Si necesitas cambiar la fecha o algo urge antes de la cita, responde directamente a este correo.</p>
+        <p style="font-size: 14px; margin-top: 28px;">¡Nos vemos pronto!<br><strong>Esteban Serna</strong> — Esteban IA</p>
+      </div>
+    </div>`;
+
+  const text =
+    `${rawFirstName ? `Hola ${rawFirstName},` : "Hola,"}\n\n` +
+    `Tu reserva para ${data.service || "tu sesión"} quedó confirmada:\n` +
+    `- Fecha: ${dateStr}\n` +
+    `- Hora (Colombia): ${timeStr}\n` +
+    `- Duración: ${durationMin} min\n\n` +
+    meetingText +
+    `\nSi necesitas cambiar la fecha o algo urge antes de la cita, responde directamente a este correo.\n\n` +
+    `¡Nos vemos pronto!\nEsteban Serna — Esteban IA`;
+
+  try {
+    await sendEmail({
+      to: data.email,
+      subject: `✅ Confirmado: ${data.service || "tu sesión"} — ${dateStr} a las ${timeStr}`,
+      text,
+      html
+    });
+  } catch (err) {
+    console.error("Fallo el envio del correo de confirmacion al cliente que reservo:", err.message);
+  }
+}
+
+// Correo interno a Esteban con cada reserva nueva, para que este al tanto
+// sin depender de entrar al Calendar. No bloquea el flujo si falla.
+export async function notifyBookingConfirmedToEsteban(data, { startDate, endDate, eventLink, meetLink }) {
+  const { dateStr, timeStr } = formatSpanishDateTimeColombia(startDate);
+  const durationMin = Math.round((endDate.getTime() - startDate.getTime()) / 60000);
+
+  try {
+    await sendEmail({
+      to: ESTEBAN_EMAIL,
+      subject: `📅 Nueva reserva: ${data.name || "-"} — ${dateStr} ${timeStr}`,
+      text:
+        `Nueva reserva agendada desde el sitio.\n\n` +
+        `Servicio: ${data.service || "-"}\n` +
+        `Fecha: ${dateStr}\n` +
+        `Hora (Colombia): ${timeStr}\n` +
+        `Duración: ${durationMin} min\n\n` +
+        `Cliente: ${data.name || "-"}\n` +
+        `Correo: ${data.email || "-"}\n` +
+        `WhatsApp: ${data.whatsapp || "no proporcionado"}\n` +
+        `Redes/Empresa: ${data.social || "-"}\n` +
+        `Objetivo: ${data.goal || "-"}\n\n` +
+        (meetLink ? `Google Meet: ${meetLink}\n` : "") +
+        (eventLink ? `Ver en Google Calendar: ${eventLink}\n` : "")
+    });
+  } catch (err) {
+    console.error("Fallo el envio del correo interno de reserva nueva:", err.message);
   }
 }
 

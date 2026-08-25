@@ -35,8 +35,33 @@ function getCalendarId() {
   return process.env.GOOGLE_CALENDAR_ID || "primary";
 }
 
-// Crea un evento y devuelve su id. `attendeeEmail` es opcional (invita al
-// cliente por correo, igual que hacia CalendarApp con sendInvites).
+// Extrae el link de Google Meet de la respuesta de la API, con el mismo
+// criterio que usa el propio Calendar: primero el atajo hangoutLink, y si
+// no viene, el entryPoint de video dentro de conferenceData.
+function extractMeetLink(eventData) {
+  if (eventData.hangoutLink) return eventData.hangoutLink;
+  const entryPoints = eventData.conferenceData && eventData.conferenceData.entryPoints;
+  const videoEntry = Array.isArray(entryPoints) ? entryPoints.find((e) => e.entryPointType === "video") : null;
+  return videoEntry ? videoEntry.uri : null;
+}
+
+// Pide que Calendar genere un link de Google Meet nuevo y unico para el
+// evento -- requestId solo necesita ser unico por intento, no se reutiliza.
+function buildConferenceData() {
+  return {
+    createRequest: {
+      requestId: `esteban-ia-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      conferenceSolutionKey: { type: "hangoutsMeet" }
+    }
+  };
+}
+
+// Crea un evento y devuelve { id, htmlLink, meetLink }. `attendeeEmail` es
+// opcional (invita al cliente por correo, igual que hacia CalendarApp con
+// sendInvites). htmlLink sirve para que el correo interno a Esteban pueda
+// enlazar directo al evento en su Calendar; meetLink es el link de Google
+// Meet generado automaticamente para la reunion (puede venir null si la
+// generacion de Meet falla -- no bloquea la creacion del evento).
 export async function createCalendarEvent({ summary, description, startDate, endDate, attendeeEmail }) {
   const calendar = getCalendarClient();
 
@@ -44,7 +69,8 @@ export async function createCalendarEvent({ summary, description, startDate, end
     summary,
     description,
     start: { dateTime: startDate.toISOString() },
-    end: { dateTime: endDate.toISOString() }
+    end: { dateTime: endDate.toISOString() },
+    conferenceData: buildConferenceData()
   };
   if (attendeeEmail) {
     event.attendees = [{ email: attendeeEmail }];
@@ -54,19 +80,22 @@ export async function createCalendarEvent({ summary, description, startDate, end
     const response = await calendar.events.insert({
       calendarId: getCalendarId(),
       requestBody: event,
+      conferenceDataVersion: 1,
       sendUpdates: attendeeEmail ? "all" : "none"
     });
-    return response.data.id;
+    return { id: response.data.id, htmlLink: response.data.htmlLink, meetLink: extractMeetLink(response.data) };
   } catch (err) {
     // Fallback sin invitado, igual que el intento original en Apps Script,
-    // por si el envio de invitacion es lo que falla.
+    // por si el envio de invitacion es lo que falla. Se mantiene el
+    // conferenceData para seguir intentando generar el link de Meet.
     if (attendeeEmail) {
       const response = await calendar.events.insert({
         calendarId: getCalendarId(),
-        requestBody: { summary, description, start: event.start, end: event.end },
+        requestBody: { summary, description, start: event.start, end: event.end, conferenceData: buildConferenceData() },
+        conferenceDataVersion: 1,
         sendUpdates: "none"
       });
-      return response.data.id;
+      return { id: response.data.id, htmlLink: response.data.htmlLink, meetLink: extractMeetLink(response.data) };
     }
     throw err;
   }
