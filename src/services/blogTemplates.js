@@ -3,6 +3,13 @@
 // /blog/posts/{slug}.html, que viven a distinta profundidad).
 const SITE_URL = "https://esteban-serna.com";
 
+// styles.css ya NO trae las fuentes por @import (afectaba el CLS del sitio
+// principal) -- cada pagina que lo use debe pedirlas aparte con <link>.
+const GOOGLE_FONTS_LINKS = `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">`;
+
 const HEADER_HTML = `
     <header class="main-header">
       <a href="${SITE_URL}/" class="logo-area" id="brand-logo" style="text-decoration:none;">
@@ -105,7 +112,7 @@ export function renderPostPage(article, { publishedAt, isDraft, hasCoverImage })
   <meta name="twitter:title" content="${escapeHtmlAttr(article.title)}">
   <meta name="twitter:description" content="${escapeHtmlAttr(article.metaDescription)}">
 
-  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}
   <link rel="stylesheet" href="${SITE_URL}/css/styles.css">
 
   <script type="application/ld+json">
@@ -171,7 +178,7 @@ export function renderIndexPage(posts) {
   <title>Blog | Esteban IA — Agentes de IA y Automatización Empresarial</title>
   <meta name="description" content="Artículos sobre agentes de IA, automatización empresarial y transformación digital para negocios en Colombia.">
   <link rel="canonical" href="${SITE_URL}/blog/">
-  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}
   <link rel="stylesheet" href="${SITE_URL}/css/styles.css">
 </head>
 <body>
