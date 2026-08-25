@@ -35,6 +35,13 @@ function getCalendarId() {
   return process.env.GOOGLE_CALENDAR_ID || "primary";
 }
 
+// Marca los eventos creados por este backend (no las otras cosas que ya
+// hay en el calendario real de Esteban -- academia, coaching, etc.) para
+// poder filtrarlos despues sin adivinar por texto del titulo/descripcion,
+// que puede coincidir por casualidad con eventos de otras apps (paso con
+// "PWA Coach Esteban", que usa un formato de descripcion casi identico).
+const ESTEBAN_IA_SOURCE_TAG = "esteban-ia-backend";
+
 // Extrae el link de Google Meet de la respuesta de la API, con el mismo
 // criterio que usa el propio Calendar: primero el atajo hangoutLink, y si
 // no viene, el entryPoint de video dentro de conferenceData.
@@ -73,17 +80,23 @@ async function insertEvent(calendar, calendarId, requestBody, sendUpdates) {
 // algunas cuentas personales sin Google Workspace, "Invalid conference
 // type value" -- no debe tumbar la reserva completa por eso).
 //
+// `reminderProperties`, si se pasa, se guarda como extendedProperties
+// privadas del evento (source, nombre/whatsapp/correo del cliente) para
+// que el recordatorio de 20 minutos antes (ver meetingReminderScheduler.js)
+// pueda encontrar y leer estos eventos sin tener que adivinar por texto.
+//
 // Se intenta en orden, cada vez con menos features, hasta que uno
 // funcione: (1) invitado + Meet, (2) invitado sin Meet, (3) ni invitado
 // ni Meet -- el minimo que deberia funcionar siempre.
-export async function createCalendarEvent({ summary, description, startDate, endDate, attendeeEmail }) {
+export async function createCalendarEvent({ summary, description, startDate, endDate, attendeeEmail, reminderProperties }) {
   const calendar = getCalendarClient();
   const calendarId = getCalendarId();
   const base = {
     summary,
     description,
     start: { dateTime: startDate.toISOString() },
-    end: { dateTime: endDate.toISOString() }
+    end: { dateTime: endDate.toISOString() },
+    ...(reminderProperties ? { extendedProperties: { private: { source: ESTEBAN_IA_SOURCE_TAG, ...reminderProperties } } } : {})
   };
 
   const attempts = [];
@@ -114,4 +127,64 @@ export async function createCalendarEvent({ summary, description, startDate, end
     }
   }
   throw lastError;
+}
+
+// Busca reuniones creadas por este backend (via el tag de
+// ESTEBAN_IA_SOURCE_TAG en extendedProperties.private) que empiezan entre
+// `fromMinutes` y `toMinutes` desde ahora, y que todavia no se les mando
+// el recordatorio de 20 minutos antes.
+export async function listUpcomingMeetingsNeedingReminder({ fromMinutes, toMinutes }) {
+  const calendar = getCalendarClient();
+  const calendarId = getCalendarId();
+  const now = Date.now();
+
+  const res = await calendar.events.list({
+    calendarId,
+    timeMin: new Date(now + fromMinutes * 60000).toISOString(),
+    timeMax: new Date(now + toMinutes * 60000).toISOString(),
+    singleEvents: true,
+    privateExtendedProperty: [`source=${ESTEBAN_IA_SOURCE_TAG}`]
+  });
+
+  return (res.data.items || [])
+    .filter((ev) => {
+      const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
+      return priv.reminderSent !== "true" && ev.start && ev.start.dateTime;
+    })
+    .map((ev) => {
+      const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
+      return {
+        id: ev.id,
+        summary: ev.summary,
+        startDate: new Date(ev.start.dateTime),
+        endDate: new Date(ev.end.dateTime),
+        meetLink: extractMeetLink(ev),
+        clientName: priv.clientName || "",
+        clientWhatsapp: priv.clientWhatsapp || "",
+        clientEmail: priv.clientEmail || "",
+        service: priv.service || ""
+      };
+    });
+}
+
+// Marca un evento como "ya se le mando el recordatorio", persistido en el
+// propio evento de Calendar (no en memoria) -- sobrevive a un reinicio del
+// servidor sin arriesgar mandar el recordatorio duplicado. Se trae las
+// extendedProperties existentes primero para no perder el resto de campos
+// al actualizar (el PATCH de la API reemplaza el mapa completo, no lo
+// mezcla campo por campo).
+export async function markMeetingReminderSent(eventId) {
+  const calendar = getCalendarClient();
+  const calendarId = getCalendarId();
+
+  const existing = await calendar.events.get({ calendarId, eventId });
+  const existingPrivate = (existing.data.extendedProperties && existing.data.extendedProperties.private) || {};
+
+  await calendar.events.patch({
+    calendarId,
+    eventId,
+    requestBody: {
+      extendedProperties: { private: { ...existingPrivate, reminderSent: "true" } }
+    }
+  });
 }

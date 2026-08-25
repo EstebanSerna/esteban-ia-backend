@@ -291,6 +291,49 @@ export async function notifyBookingConfirmedToEsteban(data, { startDate, endDate
   }
 }
 
+// Arma un link directo de wa.me a partir del numero guardado -- si ya
+// viene con codigo de pais (como pide el placeholder del formulario,
+// "+573001234567") se usa tal cual; si parece un numero local colombiano
+// de 10 digitos sin codigo de pais, se le antepone el 57. No es infalible,
+// pero cubre los dos casos reales que puede escribir alguien en Colombia.
+function buildWhatsAppLink(rawWhatsapp) {
+  if (!rawWhatsapp) return null;
+  const digits = String(rawWhatsapp).replace(/[^\d]/g, "");
+  if (!digits) return null;
+  const withCountryCode = digits.length === 10 ? `57${digits}` : digits;
+  return `https://wa.me/${withCountryCode}`;
+}
+
+// Correo interno a Esteban, 20 minutos antes de cada reunion agendada
+// desde el sitio, con el link de Meet listo para copiar y mandar por
+// WhatsApp -- por ahora es solo correo (ver meetingReminderScheduler.js);
+// si mas adelante se conecta el envio directo por WhatsApp, este mismo
+// dato ya esta armado para reutilizarse ahi.
+export async function notifyMeetingReminder(meeting) {
+  const { dateStr, timeStr } = formatSpanishDateTimeColombia(meeting.startDate);
+  const waLink = buildWhatsAppLink(meeting.clientWhatsapp);
+  const meetLine = meeting.meetLink
+    ? `Enlace de Google Meet: ${meeting.meetLink}`
+    : `⚠️ No se generó un enlace de Google Meet para esta reunión (revisa el evento en Calendar).`;
+
+  try {
+    await sendEmail({
+      to: ESTEBAN_EMAIL,
+      subject: `⏰ En 20 min: ${meeting.clientName || "Reunión"} — ${timeStr}`,
+      text:
+        `Tu reunión con ${meeting.clientName || "el cliente"} empieza en 20 minutos.\n\n` +
+        `Servicio: ${meeting.service || "-"}\n` +
+        `Fecha: ${dateStr}\n` +
+        `Hora (Colombia): ${timeStr}\n\n` +
+        `${meetLine}\n\n` +
+        `WhatsApp del cliente: ${meeting.clientWhatsapp || "no proporcionado"}${waLink ? `\nAbrir chat: ${waLink}` : ""}\n\n` +
+        `Recuerda mandarle el enlace de Meet por WhatsApp antes de que empiece.`
+    });
+  } catch (err) {
+    console.error("Fallo el envio del recordatorio de reunion:", err.message);
+  }
+}
+
 export async function notifyPendingResolvedAsRejected(data, payment) {
   try {
     await sendEmail({

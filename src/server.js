@@ -24,6 +24,7 @@ import {
 } from "./services/notifications.js";
 import { formatCOP } from "./utils/format.js";
 import { startBlogScheduler } from "./blogScheduler.js";
+import { startMeetingReminderScheduler } from "./meetingReminderScheduler.js";
 import { publishDraft, discardDraft } from "./services/blogPublisher.js";
 import { verifyApprovalToken } from "./services/blogApproval.js";
 
@@ -173,7 +174,13 @@ async function handleBooking(data) {
     description,
     startDate,
     endDate,
-    attendeeEmail: data.email
+    attendeeEmail: data.email,
+    reminderProperties: {
+      clientName: data.name || "",
+      clientWhatsapp: data.whatsapp || "",
+      clientEmail: data.email || "",
+      service: data.service || ""
+    }
   });
 
   // No bloquean la respuesta al cliente ni hacen fallar la reserva si el
@@ -363,4 +370,5 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`esteban-ia-backend escuchando en el puerto ${port}`);
   startBlogScheduler();
+  startMeetingReminderScheduler();
 });
