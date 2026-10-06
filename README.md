@@ -59,7 +59,8 @@ autenticar explícitamente:
 3. Mientras no verifiques tu dominio, los correos salen desde `onboarding@resend.dev` (funciona,
    pero se ve menos profesional). Para enviar desde tu propio dominio:
    - En Resend → "Domains" → agrega `esteban-serna.com`.
-   - Te da 2-3 registros DNS (TXT/CNAME) para agregar en tu panel de hosting (StackCP).
+   - Te da 2-3 registros DNS (TXT/CNAME) para agregar en la zona DNS del dominio (se administra desde el panel de StackCP; el correo
+     del dominio también vive ahí, así que no borres ni cambies los registros MX/SPF/DKIM).
    - Una vez verificado, cambia `RESEND_FROM` a algo como
      `Esteban IA <hola@esteban-serna.com>`.
 
@@ -153,8 +154,9 @@ ese día, en el peor caso se genera un artículo con 1 día de diferencia, no es
    que expire ni se pueda perder — ver `src/services/blogApproval.js`).
 6. Al hacer clic, `GET /blog/approve` o `GET /blog/discard` ejecutan la acción. Publicar mueve los
    archivos de `blog/drafts/` a `blog/posts/`, regenera `blog/index.html`, actualiza `posts.json` y
-   agrega la URL a `sitemap.xml` — todo en commits separados al repo del frontend, que dispara su
-   propio despliegue por GitHub Actions.
+   agrega la URL a `sitemap.xml` — todo en commits separados al repo del frontend; cada commit
+   hace que Railway (servicio `esteban-ia-web`) redespliegue el sitio, así que el artículo aparece en
+   vivo un par de minutos después de aprobarlo.
 
 **Para disparar la generación manualmente** (sin esperar el cron), no hay una ruta HTTP para esto
 — usa la consola de Railway (`railway run node -e "import('./src/blogScheduler.js').then(m => m.generateAndNotify())"`)
