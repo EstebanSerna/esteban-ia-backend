@@ -10,6 +10,26 @@ const GOOGLE_FONTS_LINKS = `
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">`;
 
+// Mismas etiquetas de analitica que usa index.html (GA4 + Microsoft
+// Clarity). Antes el blog NO las tenia, asi que ninguna visita a los
+// articulos se medía. Los borradores no las llevan: son privados (noindex)
+// y las revisiones de Esteban no deben contarse como trafico real.
+const ANALYTICS_SNIPPETS = `
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-3PL38SPE38"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-3PL38SPE38');
+  </script>
+  <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "y72jhasyop");
+  </script>`;
+
 const HEADER_HTML = `
     <header class="main-header">
       <a href="${SITE_URL}/" class="logo-area" id="brand-logo" style="text-decoration:none;">
@@ -112,7 +132,7 @@ export function renderPostPage(article, { publishedAt, isDraft, hasCoverImage })
   <meta name="twitter:title" content="${escapeHtmlAttr(article.title)}">
   <meta name="twitter:description" content="${escapeHtmlAttr(article.metaDescription)}">
 
-  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}
+  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}${isDraft ? "" : ANALYTICS_SNIPPETS}
   <link rel="stylesheet" href="${SITE_URL}/css/styles.css">
 
   <script type="application/ld+json">
@@ -178,7 +198,7 @@ export function renderIndexPage(posts) {
   <title>Blog | Esteban IA — Agentes de IA y Automatización Empresarial</title>
   <meta name="description" content="Artículos sobre agentes de IA, automatización empresarial y transformación digital para negocios en Colombia.">
   <link rel="canonical" href="${SITE_URL}/blog/">
-  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}
+  <link rel="icon" type="image/png" sizes="192x192" href="${SITE_URL}/images/favicon-192.png">${GOOGLE_FONTS_LINKS}${ANALYTICS_SNIPPETS}
   <link rel="stylesheet" href="${SITE_URL}/css/styles.css">
 </head>
 <body>
