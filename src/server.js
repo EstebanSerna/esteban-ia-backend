@@ -66,6 +66,19 @@ function approvalResultPage(title, message, color) {
   <body><div class="box"><h1>${title}</h1><p>${message}</p></div></body></html>`;
 }
 
+// Si la misma accion llega dos veces casi a la vez (pasa de verdad: Chrome en
+// iPhone repite la peticion si la primera tarda), la segunda espera y
+// comparte el resultado de la primera en vez de arrancar otra publicacion
+// en paralelo -- antes las dos chocaban al escribir la portada en GitHub
+// (422) y salia un error falso aunque el articulo si se habia publicado.
+const inFlightBlogActions = new Map();
+function runOnce(key, fn) {
+  if (inFlightBlogActions.has(key)) return inFlightBlogActions.get(key);
+  const promise = fn().finally(() => inFlightBlogActions.delete(key));
+  inFlightBlogActions.set(key, promise);
+  return promise;
+}
+
 // Enlaces del correo de revision del blog.
 app.get("/blog/approve", async (req, res) => {
   const { slug, token } = req.query;
@@ -73,9 +86,13 @@ app.get("/blog/approve", async (req, res) => {
     return res.status(403).send(approvalResultPage("Enlace inválido", "Este enlace ya se usó o no es válido.", "#e74c3c"));
   }
   try {
-    const entry = await publishDraft(slug);
+    const entry = await runOnce(`publish:${slug}`, () => publishDraft(slug));
     res.send(approvalResultPage("✅ Publicado", `"${entry.title}" ya está en vivo en el blog.`, "#2ecc71"));
   } catch (err) {
+    if (/No existe un borrador/.test(err.message)) {
+      // El borrador ya no esta: se publico (o se descarto) antes con este mismo enlace.
+      return res.send(approvalResultPage("ℹ️ Ya procesado", "Este artículo ya fue publicado o descartado antes. No hay nada más que hacer.", "#f1c40f"));
+    }
     console.error("Error publicando articulo de blog:", err);
     res.status(200).send(approvalResultPage("Error al publicar", err.message, "#e74c3c"));
   }
@@ -87,7 +104,7 @@ app.get("/blog/discard", async (req, res) => {
     return res.status(403).send(approvalResultPage("Enlace inválido", "Este enlace ya se usó o no es válido.", "#e74c3c"));
   }
   try {
-    await discardDraft(slug);
+    await runOnce(`discard:${slug}`, () => discardDraft(slug));
     res.send(approvalResultPage("🗑️ Descartado", "El borrador se eliminó, no se publicó nada.", "#f1c40f"));
   } catch (err) {
     console.error("Error descartando articulo de blog:", err);
